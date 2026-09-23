@@ -1105,6 +1105,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
                 boot_rev, disk_rev = skew
                 msg = code_skew_restart_message(boot_rev, disk_rev)
                 current["agent_error"] = msg
+                current["agent_error_code"] = "code_skew_restart_required"
                 _emit("error", sid, {"message": msg, "code": "code_skew_restart_required"})
                 return
             if not _await_resume_history(sid, current):
@@ -2550,7 +2551,8 @@ def _deferred_session_record(
     """A live-session record whose AIAgent is built later (lazy watch / cold resume) — _init_session's shape minus the agent."""
     now = time.time()
     return {
-        "agent": None, "agent_error": None, "agent_ready": threading.Event(), "attached_images": [],
+        "agent": None, "agent_error": None, "agent_error_code": None,
+        "agent_ready": threading.Event(), "attached_images": [],
         "close_on_disconnect": close_on_disconnect, "active_session_lease": lease, "cols": cols,
         "created_at": now, "cwd": cwd, "display_history_prefix": display_history_prefix or [],
         "edit_snapshots": {}, "explicit_cwd": bool(explicit_cwd), "history": history,
