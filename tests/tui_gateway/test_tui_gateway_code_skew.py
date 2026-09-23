@@ -38,6 +38,7 @@ def _session(agent=None, **extra):
     return {
         "agent": agent,
         "agent_error": None,
+        "agent_error_code": None,
         "session_key": "gw-session-key",
         "history": [],
         "history_lock": threading.RLock(),
@@ -72,6 +73,7 @@ def test_code_skew_aborts_agent_build_with_actionable_error(monkeypatch, tmp_pat
     assert session["agent"] is None
     assert session["agent_ready"].is_set()
     assert session["agent_error"] is not None
+    assert session["agent_error_code"] == "code_skew_restart_required"
     assert "boot123456" in session["agent_error"]
     assert "disk654321" in session["agent_error"]
     assert "stale-module crash" in session["agent_error"]
@@ -129,3 +131,39 @@ def test_turn_error_text_renders_code_skew_surface():
     assert lines[0] == "Backend restart required after code update. Your message was not answered."
     assert "Details: This process is running code from abc but disk is now xyz" in lines[1]
     assert lines[2] == "Restart Hermes Desktop or the gateway service to load updated code."
+
+
+def test_turn_error_surface_uses_structured_code_skew_state(monkeypatch):
+    """Retry policy follows the typed build error, not wording in its message."""
+    surfaces = []
+    monkeypatch.setattr(
+        server, "_wait_agent_for_prompt",
+        lambda *_args: {"error": {"message": "Backend needs a restart after checkout update"}})
+    monkeypatch.setattr(
+        server, "_emit_terminal_turn_error",
+        lambda _sid, _session, _message, *, error_surface: surfaces.append(error_surface))
+    monkeypatch.setattr(server, "_session_info", lambda *_args: {})
+    monkeypatch.setattr(server, "_emit", lambda *_args, **_kwargs: None)
+
+    session = _session(agent_error_code="code_skew_restart_required")
+    server._run_after_agent_ready("rid", "sid", session, "hello", None, None, None)
+
+    assert surfaces == [{"layer": "runtime", "code": "code_skew_detected", "retryable": False}]
+
+
+def test_turn_error_surface_does_not_infer_code_skew_from_message(monkeypatch):
+    """Ordinary init failures stay retryable even if their detail mentions stale modules."""
+    surfaces = []
+    monkeypatch.setattr(
+        server, "_wait_agent_for_prompt",
+        lambda *_args: {"error": {"message": "unexpected stale-module crash in optional plugin"}})
+    monkeypatch.setattr(
+        server, "_emit_terminal_turn_error",
+        lambda _sid, _session, _message, *, error_surface: surfaces.append(error_surface))
+    monkeypatch.setattr(server, "_session_info", lambda *_args: {})
+    monkeypatch.setattr(server, "_emit", lambda *_args, **_kwargs: None)
+
+    session = _session()
+    server._run_after_agent_ready("rid", "sid", session, "hello", None, None, None)
+
+    assert surfaces == [{"layer": "runtime", "code": "agent_init_failed", "retryable": True}]

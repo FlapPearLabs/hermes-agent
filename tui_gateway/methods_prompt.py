@@ -500,7 +500,7 @@ def _run_after_agent_ready(
         # Terminal frame + retained snapshot (not a bare "error" event): the snapshot is
         # the only way resume shows this to a disconnected client.
         err_msg = (err.get("error") or {}).get("message", "agent initialization failed")
-        is_skew = "stale-module crash" in err_msg
+        is_skew = session.get("agent_error_code") == "code_skew_restart_required"
         _emit_terminal_turn_error(
             sid, session, err_msg,
             error_surface={
